@@ -207,15 +207,42 @@ static dispatch_once_t onceToken;
 }
 
 - (void)getAssetsFromFetchResult:(PHFetchResult *)result completion:(void (^)(NSArray<TZAssetModel *> *))completion {
+    if (!result || result.count == 0) {
+        if (completion) completion(@[]);
+        return;
+    }
+    
     TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
-    NSMutableArray *photoArr = [NSMutableArray array];
-    [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
-        TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
-        if (model) {
-            [photoArr addObject:model];
-        }
-    }];
-    if (completion) completion(photoArr);
+    NSMutableArray *photoArr = [NSMutableArray arrayWithCapacity:result.count];
+    
+    // 使用异步并发队列
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        // 使用 NSEnumerationConcurrent 支持并发遍历
+        [result enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
+            @autoreleasepool {
+                TZAssetModel *model = [self assetModelWithAsset:asset
+                                             allowPickingVideo:config.allowPickingVideo
+                                             allowPickingImage:config.allowPickingImage];
+                if (model) {
+                    @synchronized (photoArr) {
+                        [photoArr addObject:model];
+                    }
+                }
+            }
+        }];
+        
+//        // 按时间排序（如果需要）
+//        [photoArr sortUsingComparator:^NSComparisonResult(TZAssetModel *obj1, TZAssetModel *obj2) {
+//            return [obj2.asset.creationDate compare:obj1.asset.creationDate];
+//        }];
+        
+        // 回到主线程返回结果
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion([photoArr copy]);
+            }
+        });
+    });
 }
 
 ///  Get asset at index 获得下标为index的单个照片
