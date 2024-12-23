@@ -724,6 +724,9 @@
 }
 
 #pragma mark - Public
+- (void)cancelVc {
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
 
 - (void)cancelButtonClick {
     if (self.autoDismiss) {
@@ -762,6 +765,21 @@
 
 @implementation TZAlbumPickerController
 
+// 添加新的辅助方法
+- (UIBarButtonItem *)createBarButtonItemWithTitle:(NSString *)title target:(id)target {
+    UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 60, 44)];
+    
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.frame = containerView.bounds;
+    [button setTitle:title forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont systemFontOfSize:16];
+    [button addTarget:target action:@selector(cancelButtonClick) forControlEvents:UIControlEventTouchUpInside];
+    [button setContentHorizontalAlignment:UIControlContentHorizontalAlignmentRight];
+    [containerView addSubview:button];
+    
+    return [[UIBarButtonItem alloc] initWithCustomView:containerView];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     if ([[TZImageManager manager] authorizationStatusAuthorized] || !SYSTEM_VERSION_GREATER_THAN_15) {
@@ -775,15 +793,15 @@
     }
     
     TZImagePickerController *imagePickerVc = (TZImagePickerController *)self.navigationController;
-    UIBarButtonItem *cancelItem = [[UIBarButtonItem alloc] initWithTitle:imagePickerVc.cancelBtnTitleStr style:UIBarButtonItemStylePlain target:imagePickerVc action:@selector(cancelButtonClick)];
-    [TZCommonTools configBarButtonItem:cancelItem tzImagePickerVc:imagePickerVc];
-    self.navigationItem.rightBarButtonItem = cancelItem;
+    self.navigationItem.rightBarButtonItem = [self createBarButtonItemWithTitle:imagePickerVc.cancelBtnTitleStr
+                                                                       target:imagePickerVc];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     TZImagePickerController *imagePickerVc = (TZImagePickerController *)self.navigationController;
     [imagePickerVc hideProgressHUD];
+    
     if (imagePickerVc.allowPickingImage) {
         self.navigationItem.title = [NSBundle tz_localizedStringForKey:@"Photos"];
     } else if (imagePickerVc.allowPickingVideo) {
@@ -791,12 +809,24 @@
     }
     
     if (self.isFirstAppear && !imagePickerVc.navLeftBarButtonSettingBlock) {
-        self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:[NSBundle tz_localizedStringForKey:@"Back"] style:UIBarButtonItemStylePlain target:nil action:nil];
+        self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:[NSBundle tz_localizedStringForKey:@"Back"]
+                                                                               style:UIBarButtonItemStylePlain
+                                                                              target:nil
+                                                                              action:nil];
+    }
+    
+    BOOL isRootViewController = (self.navigationController.viewControllers.firstObject == self);
+    NSString *buttonTitle = isRootViewController ?
+        [NSBundle tz_localizedStringForKey:@"Back"] :
+        imagePickerVc.cancelBtnTitleStr;
+    
+    if (!isRootViewController || imagePickerVc.cancelBtnTitleStr.length > 0) {
+        self.navigationItem.rightBarButtonItem = [self createBarButtonItemWithTitle:buttonTitle
+                                                                           target:imagePickerVc];
     }
     
     [self configTableView];
 }
-
 - (void)configTableView {
     if (![[TZImageManager manager] authorizationStatusAuthorized]) {
         return;
