@@ -207,40 +207,44 @@ static dispatch_once_t onceToken;
 }
 
 - (void)getAssetsFromFetchResult:(PHFetchResult *)result completion:(void (^)(NSArray<TZAssetModel *> *))completion {
-    if (!result || result.count == 0) {
-        if (completion) completion(@[]);
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    
+    // 如果数量小于10000，使用原始方法
+    if (result.count < 10000) {
+        NSMutableArray *photoArr = [NSMutableArray array];
+        [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
+            TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
+            if (model) {
+                [photoArr addObject:model];
+            }
+        }];
+        if (completion) completion(photoArr);
         return;
     }
     
-    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
-    NSMutableArray *photoArr = [NSMutableArray arrayWithCapacity:result.count];
-    
-    // 使用异步并发队列
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // 使用 NSEnumerationConcurrent 支持并发遍历
-        [result enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
-            @autoreleasepool {
-                TZAssetModel *model = [self assetModelWithAsset:asset
-                                             allowPickingVideo:config.allowPickingVideo
-                                             allowPickingImage:config.allowPickingImage];
-                if (model) {
-                    @synchronized (photoArr) {
-                        [photoArr addObject:model];
-                    }
-                }
+    // 大量照片时使用并发处理
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        // 预分配数组空间
+        NSMutableArray *photoArr = [NSMutableArray arrayWithCapacity:result.count];
+        for (NSInteger i = 0; i < result.count; i++) {
+            [photoArr addObject:[NSNull null]];
+        }
+        
+        // 使用并发队列加速处理
+        dispatch_apply(result.count, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^(size_t idx) {
+            PHAsset *asset = result[idx];
+            TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
+            if (model) {
+                photoArr[idx] = model;
             }
-        }];
+        });
         
-//        // 按时间排序（如果需要）
-//        [photoArr sortUsingComparator:^NSComparisonResult(TZAssetModel *obj1, TZAssetModel *obj2) {
-//            return [obj2.asset.creationDate compare:obj1.asset.creationDate];
-//        }];
+        // 移除空对象
+        [photoArr removeObjectsInArray:@[[NSNull null]]];
         
-        // 回到主线程返回结果
+        // 返回结果
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (completion) {
-                completion([photoArr copy]);
-            }
+            if (completion) completion(photoArr);
         });
     });
 }
