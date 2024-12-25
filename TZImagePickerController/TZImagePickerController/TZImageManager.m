@@ -343,24 +343,50 @@ static dispatch_once_t onceToken;
         if (completion) completion(@"0B");
         return;
     }
+    
     __block NSInteger dataLength = 0;
     __block NSInteger assetCount = 0;
+    
     for (NSInteger i = 0; i < photos.count; i++) {
         TZAssetModel *model = photos[i];
-        PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
-        options.resizeMode = PHImageRequestOptionsResizeModeFast;
-        options.networkAccessAllowed = YES;
-        if (model.type == TZAssetModelMediaTypePhotoGif) {
-            options.version = PHImageRequestOptionsVersionOriginal;
-        }
-        [[PHImageManager defaultManager] requestImageDataForAsset:model.asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
-            if (model.type != TZAssetModelMediaTypeVideo) dataLength += imageData.length;
-            assetCount ++;
-            if (assetCount >= photos.count) {
-                NSString *bytes = [self getBytesFromDataLength:dataLength];
-                if (completion) completion(bytes);
+        
+        if (model.type == TZAssetModelMediaTypeVideo) {
+            PHVideoRequestOptions *videoOptions = [[PHVideoRequestOptions alloc] init];
+            videoOptions.networkAccessAllowed = YES;
+            
+            [[PHImageManager defaultManager] requestAVAssetForVideo:model.asset options:videoOptions resultHandler:^(AVAsset *asset, AVAudioMix *audioMix, NSDictionary *info) {
+                if ([asset isKindOfClass:[AVURLAsset class]]) {
+                    NSNumber *fileSize = nil;
+                    [[(AVURLAsset *)asset URL] getResourceValue:&fileSize forKey:NSURLFileSizeKey error:nil];
+                    dataLength += [fileSize longLongValue];
+                }
+                assetCount++;
+                if (assetCount >= photos.count) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        NSString *bytes = [self getBytesFromDataLength:dataLength];
+                        if (completion) completion(bytes);
+                    });
+                }
+            }];
+        } else {
+            PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
+            options.resizeMode = PHImageRequestOptionsResizeModeFast;
+            options.networkAccessAllowed = YES;
+            if (model.type == TZAssetModelMediaTypePhotoGif) {
+                options.version = PHImageRequestOptionsVersionOriginal;
             }
-        }];
+            
+            [[PHImageManager defaultManager] requestImageDataForAsset:model.asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *info) {
+                dataLength += imageData.length;
+                assetCount++;
+                if (assetCount >= photos.count) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        NSString *bytes = [self getBytesFromDataLength:dataLength];
+                        if (completion) completion(bytes);
+                    });
+                }
+            }];
+        }
     }
 }
 

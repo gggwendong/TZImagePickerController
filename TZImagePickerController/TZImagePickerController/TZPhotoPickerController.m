@@ -102,7 +102,9 @@ static CGFloat itemMargin = 5;
         leftButton.frame = CGRectMake(0, 0, 44, 44);
         [leftButton addTarget:tzImagePickerVc action:@selector(cancelButtonClick) forControlEvents:UIControlEventTouchUpInside];
         tzImagePickerVc.navLeftBarButtonSettingBlock(leftButton);
-        self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
+        UIBarButtonItem *leftItem1 = [[UIBarButtonItem alloc] initWithCustomView:leftButton];
+        [TZCommonTools configBarButtonItem:leftItem1 tzImagePickerVc:tzImagePickerVc];
+        self.navigationItem.leftBarButtonItem = leftItem1;
     } else if (tzImagePickerVc.childViewControllers.count) {
         UIBarButtonItem *backItem = [[UIBarButtonItem alloc] initWithTitle:[NSBundle tz_localizedStringForKey:@"Back"] style:UIBarButtonItemStylePlain target:tzImagePickerVc action:@selector(cancelButtonClick)];
         [TZCommonTools configBarButtonItem:backItem tzImagePickerVc:tzImagePickerVc];

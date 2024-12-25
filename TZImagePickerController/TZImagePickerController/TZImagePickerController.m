@@ -776,7 +776,6 @@
     [button addTarget:target action:@selector(cancelButtonClick) forControlEvents:UIControlEventTouchUpInside];
     [button setContentHorizontalAlignment:UIControlContentHorizontalAlignmentRight];
     [containerView addSubview:button];
-    
     return [[UIBarButtonItem alloc] initWithCustomView:containerView];
 }
 
@@ -822,9 +821,9 @@
     
     if (!isRootViewController || imagePickerVc.cancelBtnTitleStr.length > 0) {
         self.navigationItem.rightBarButtonItem = [self createBarButtonItemWithTitle:buttonTitle
-                                                                           target:imagePickerVc];
+                                                                        target:imagePickerVc];
     }
-    
+    [TZCommonTools configBarButtonItem:self.navigationItem.backBarButtonItem tzImagePickerVc:imagePickerVc];
     [self configTableView];
 }
 - (void)configTableView {
