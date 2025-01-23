@@ -48,6 +48,10 @@
 @property (nonatomic, strong) NSOperationQueue *operationQueue;
 @property (nonatomic, assign) BOOL isSavingMedia;
 @property (nonatomic, assign) BOOL isFetchingMedia;
+@property (nonatomic, assign) BOOL isLoadingMore;
+@property (nonatomic, strong) UIActivityIndicatorView *loadingIndicator;
+@property (nonatomic, assign) BOOL canLoadMore;
+@property (nonatomic, strong) NSDate *lastLoadTime;
 
 @end
 
@@ -117,37 +121,38 @@ static CGFloat itemMargin = 5;
     
     self.operationQueue = [[NSOperationQueue alloc] init];
     self.operationQueue.maxConcurrentOperationCount = 3;
+    
+    // 初始化加载指示器
+    self.loadingIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+    self.loadingIndicator.hidesWhenStopped = YES;
+    [self.view addSubview:self.loadingIndicator];
 }
 
 - (void)fetchAssetModels {
     TZImagePickerController *tzImagePickerVc = (TZImagePickerController *)self.navigationController;
-    if (_isFirstAppear && !_model.models.count) {
-        [tzImagePickerVc showProgressHUD];
-    }
+//    if (_isFirstAppear && !_model.models.count) {
+//        [tzImagePickerVc showProgressHUD];
+//    }
     dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        CGFloat systemVersion = [[[UIDevice currentDevice] systemVersion] floatValue];
         if (!tzImagePickerVc.sortAscendingByModificationDate && self->_isFirstAppear && self->_model.isCameraRoll) {
             [[TZImageManager manager] getCameraRollAlbumWithFetchAssets:YES completion:^(TZAlbumModel *model) {
                 self->_model = model;
                 self->_models = [NSMutableArray arrayWithArray:self->_model.models];
                 [self initSubviews];
             }];
-        } else if (self->_showTakePhotoBtn || self->_isFirstAppear || !self.model.models || systemVersion >= 14.0) {
+        } else {
             [[TZImageManager manager] getAssetsFromFetchResult:self->_model.result completion:^(NSArray<TZAssetModel *> *models) {
                 self->_models = [NSMutableArray arrayWithArray:models];
                 [self initSubviews];
             }];
-        } else {
-            self->_models = [NSMutableArray arrayWithArray:self->_model.models];
-            [self initSubviews];
         }
     });
 }
 
 - (void)initSubviews {
     dispatch_async(dispatch_get_main_queue(), ^{
-        TZImagePickerController *tzImagePickerVc = (TZImagePickerController *)self.navigationController;
-        [tzImagePickerVc hideProgressHUD];
+//        TZImagePickerController *tzImagePickerVc = (TZImagePickerController *)self.navigationController;
+//        [tzImagePickerVc hideProgressHUD];
         
         [self checkSelectedModels];
         [self configCollectionView];
@@ -431,6 +436,9 @@ static CGFloat itemMargin = 5;
     if (tzImagePickerVc.photoPickerPageDidLayoutSubviewsBlock) {
         tzImagePickerVc.photoPickerPageDidLayoutSubviewsBlock(_collectionView, _bottomToolBar, _previewButton, _originalPhotoButton, _originalPhotoLabel, _doneButton, _numberImageView, _numberLabel, _divideLine);
     }
+    
+    // 设置加载指示器位置
+    self.loadingIndicator.center = CGPointMake(self.view.tz_width / 2, 50);
 }
 
 #pragma mark - Notification
@@ -579,7 +587,10 @@ static CGFloat itemMargin = 5;
 #pragma mark - UICollectionViewDataSource && Delegate
 
 - (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
-    return [self getAllCellCount];
+    if (_showTakePhotoBtn) {
+        return _models.count + 1;
+    }
+    return _models.count;
 }
 
 - (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
@@ -745,7 +756,20 @@ static CGFloat itemMargin = 5;
 #pragma mark - UIScrollViewDelegate
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView {
-    // [self updateCachedAssets];
+    // 添加时间间隔控制，限制2秒内只能触发一次
+    NSTimeInterval interval = [[NSDate date] timeIntervalSinceDate:self.lastLoadTime ?: [NSDate distantPast]];
+    if (!self.isLoadingMore && scrollView.contentOffset.y < -100 && interval > 3.0) {
+        self.lastLoadTime = [NSDate date];
+        [self loadMoreAssets];
+    }
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
+    // 只在松手且标记为可加载时触发加载
+    if (self.canLoadMore) {
+        self.canLoadMore = NO; // 重置标记
+        [self loadMoreAssets];
+    }
 }
 
 #pragma mark - Private Method
@@ -1260,6 +1284,57 @@ static CGFloat itemMargin = 5;
         [indexPaths addObject:indexPath];
     }
     return indexPaths;
+}
+
+- (void)loadMoreAssets {
+    if (self.isLoadingMore) return;
+    
+    // 检查是否还有更多数据可加载
+    if (_models.count >= self.model.result.count) {
+        return;
+    }
+    
+    self.isLoadingMore = YES;
+    
+    // 显示加载提示
+    TZImagePickerController *tzImagePickerVc = (TZImagePickerController *)self.navigationController;
+    [tzImagePickerVc showProgressHUD];
+    
+    // 使用主队列同步处理
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[TZImageManager manager] getMoreAssetsFromFetchResult:self.model.result currentCount:self->_models.count completion:^(NSArray<TZAssetModel *> *models) {
+            NSLog(@"loadMoreAssets++++,models.count=%lu",(unsigned long)models.count);
+            if (models.count > 0) {
+                // 计算每行显示的列数和每个item的高度
+                NSInteger columnCount = self.columnNumber;
+                CGFloat itemWH = (self.view.tz_width - 2 * 4 - 4) / columnCount - 4;
+                
+                // 计算新增加的行数
+                NSInteger newRowCount = (models.count + columnCount - 1) / columnCount;
+                CGFloat heightToAdd = newRowCount * (itemWH + 4);
+                
+                // 将新加载的照片插入到数组前面，保持时间顺序
+                NSIndexSet *indexes = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, models.count)];
+                [self->_models insertObjects:models atIndexes:indexes];
+                
+                // 记录当前滚动位置
+                CGPoint oldOffset = self.collectionView.contentOffset;
+                
+                // 刷新UI
+                [self.collectionView reloadData];
+                
+                // 由于新内容插入到顶部，需要向下偏移相应的高度
+                CGPoint newOffset = CGPointMake(oldOffset.x, oldOffset.y + heightToAdd);
+                
+                // 设置新的滚动位置
+                [self.collectionView setContentOffset:newOffset animated:NO];
+            }
+            
+            // 隐藏加载提示
+            [tzImagePickerVc hideProgressHUD];
+            self.isLoadingMore = NO;
+        }];
+    });
 }
 #pragma clang diagnostic pop
 

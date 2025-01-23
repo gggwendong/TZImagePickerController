@@ -14,6 +14,8 @@
 @interface TZImageManager ()
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+@property (nonatomic, assign) NSInteger pageSize;
+@property (nonatomic, assign) BOOL isLoadingMore;
 @end
 
 @implementation TZImageManager
@@ -208,11 +210,12 @@ static dispatch_once_t onceToken;
 
 - (void)getAssetsFromFetchResult:(PHFetchResult *)result completion:(void (^)(NSArray<TZAssetModel *> *))completion {
     TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    self.pageSize = 3000; // 设置每页加载数量
     
-    // 如果数量小于10000，使用原始方法
-    if (result.count < 10000) {
+    // 如果总数小于一页,直接全部加载
+    if (result.count <= self.pageSize) {
         NSMutableArray *photoArr = [NSMutableArray array];
-        [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
+        [result enumerateObjectsWithOptions:NSEnumerationReverse usingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
             TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
             if (model) {
                 [photoArr addObject:model];
@@ -222,27 +225,23 @@ static dispatch_once_t onceToken;
         return;
     }
     
-    // 大量照片时使用并发处理
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-        // 预分配数组空间
-        NSMutableArray *photoArr = [NSMutableArray arrayWithCapacity:result.count];
-        for (NSInteger i = 0; i < result.count; i++) {
-            [photoArr addObject:[NSNull null]];
+    // 加载最新的一页数据
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSMutableArray *photoArr = [NSMutableArray array];
+        NSInteger count = result.count;
+        NSInteger offset = MAX(count - self.pageSize, 0);
+        
+        // 从最新的照片开始遍历
+        for (NSInteger i = count - 1; i >= offset; i--) {
+            @autoreleasepool {
+                PHAsset *asset = result[i];
+                TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
+                if (model) {
+                    [photoArr insertObject:model atIndex:0];
+                }
+            }
         }
         
-        // 使用并发队列加速处理
-        dispatch_apply(result.count, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^(size_t idx) {
-            PHAsset *asset = result[idx];
-            TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
-            if (model) {
-                photoArr[idx] = model;
-            }
-        });
-        
-        // 移除空对象
-        [photoArr removeObjectsInArray:@[[NSNull null]]];
-        
-        // 返回结果
         dispatch_async(dispatch_get_main_queue(), ^{
             if (completion) completion(photoArr);
         });
@@ -1121,6 +1120,36 @@ static dispatch_once_t onceToken;
 }
 
 #pragma clang diagnostic pop
+
+// 添加加载更多数据的方法
+- (void)getMoreAssetsFromFetchResult:(PHFetchResult *)result currentCount:(NSInteger)currentCount completion:(void (^)(NSArray<TZAssetModel *> *))completion {
+    if (self.isLoadingMore || currentCount >= result.count) {
+        if (completion) completion(nil);
+        return;
+    }
+    
+    self.isLoadingMore = YES;
+    TZImagePickerConfig *config = [TZImagePickerConfig sharedInstance];
+    
+    // 使用同步处理
+    NSInteger offset = MAX((NSInteger)(result.count - currentCount - self.pageSize), 0);
+    NSInteger start = result.count - currentCount - 1;
+    NSMutableArray *photoArr = [NSMutableArray array];
+    
+    // 从旧到新遍历,这样插入时就是正确的顺序
+    for (NSInteger i = offset; i <= start; i++) {
+        @autoreleasepool {
+            PHAsset *asset = result[i];
+            TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
+            if (model) {
+                [photoArr addObject:model];
+            }
+        }
+    }
+    
+    self.isLoadingMore = NO;
+    if (completion) completion(photoArr);
+}
 
 @end
 

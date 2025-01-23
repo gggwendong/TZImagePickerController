@@ -62,7 +62,15 @@
 - (void)getAssetsFromFetchResult:(PHFetchResult *)result allowPickingVideo:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage completion:(void (^)(NSArray<TZAssetModel *> *models))completion __attribute__((deprecated("Use -getAssetsFromFetchResult:completion:. You can config allowPickingImage、allowPickingVideo by TZImagePickerConfig")));
 - (void)getAssetFromFetchResult:(PHFetchResult *)result atIndex:(NSInteger)index allowPickingVideo:(BOOL)allowPickingVideo allowPickingImage:(BOOL)allowPickingImage completion:(void (^)(TZAssetModel *model))completion __attribute__((deprecated("Use -getAssetFromFetchResult:atIndex:completion:. You can config allowPickingImage、allowPickingVideo by TZImagePickerConfig")));
 - (void)getAssetFromFetchResult:(PHFetchResult *)result atIndex:(NSInteger)index completion:(void (^)(TZAssetModel *model))completion;
-
+/**
+ * 从FetchResult中获取更多资源
+ * @param result PHFetchResult对象
+ * @param currentCount 当前已加载的数量
+ * @param completion 完成回调,返回新加载的资源数组
+ */
+- (void)getMoreAssetsFromFetchResult:(PHFetchResult *)result
+                       currentCount:(NSInteger)currentCount
+                        completion:(void (^)(NSArray<TZAssetModel *> *models))completion;
 /// Get photo 获得照片
 - (PHImageRequestID)getPostImageWithAlbumModel:(TZAlbumModel *)model completion:(void (^)(UIImage *postImage))completion;
 
