@@ -126,6 +126,16 @@ static CGFloat itemMargin = 5;
     self.loadingIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
     self.loadingIndicator.hidesWhenStopped = YES;
     [self.view addSubview:self.loadingIndicator];
+    
+    // 确保初始化时不会触发加载
+    self.isLoadingMore = NO;
+    self.lastLoadTime = [NSDate date];
+    
+    // 初始化时禁用滚动
+    self.collectionView.scrollEnabled = NO;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        self.collectionView.scrollEnabled = YES;
+    });
 }
 
 - (void)fetchAssetModels {
@@ -756,9 +766,22 @@ static CGFloat itemMargin = 5;
 #pragma mark - UIScrollViewDelegate
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView {
-    // 添加时间间隔控制，限制2秒内只能触发一次
+    // 只在用户手动滚动时触发
+    if (!scrollView.isDragging && !scrollView.isDecelerating) {
+        return;
+    }
+    
+    // 添加时间间隔和偏移量的双重控制
     NSTimeInterval interval = [[NSDate date] timeIntervalSinceDate:self.lastLoadTime ?: [NSDate distantPast]];
-    if (!self.isLoadingMore && scrollView.contentOffset.y < -100 && interval > 3.0) {
+    CGFloat offsetY = scrollView.contentOffset.y;
+    CGFloat contentHeight = scrollView.contentSize.height;
+    CGFloat frameHeight = scrollView.frame.size.height;
+    
+    // 只在滚动到顶部一定距离且满足时间间隔时触发
+    if (!self.isLoadingMore &&
+        offsetY < -100 &&
+        interval > 3.0 &&
+        contentHeight > frameHeight) {  // 确保有足够内容可滚动
         self.lastLoadTime = [NSDate date];
         [self loadMoreAssets];
     }
