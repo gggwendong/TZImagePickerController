@@ -215,7 +215,7 @@ static dispatch_once_t onceToken;
     // 如果总数小于一页,直接全部加载
     if (result.count <= self.pageSize) {
         NSMutableArray *photoArr = [NSMutableArray array];
-        [result enumerateObjectsWithOptions:NSEnumerationReverse usingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
+        [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL * _Nonnull stop) {
             TZAssetModel *model = [self assetModelWithAsset:asset allowPickingVideo:config.allowPickingVideo allowPickingImage:config.allowPickingImage];
             if (model) {
                 [photoArr addObject:model];
